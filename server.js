@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
 
 // Initialize the Express app
 const app = express();
@@ -34,6 +35,13 @@ app.post('/update', (req, res) => {
   });
 });
 
+// Route to reset data
+app.post('/reset', (req, res) => {
+  latestData = { peopleCount: 0, temperature: 0 };
+  console.log('Data reset to initial values.');
+  res.status(200).json({ message: 'Data has been reset.', latestData });
+});
+
 // Serve the static files for the client
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
@@ -50,7 +58,6 @@ app.listen(PORT, () => {
 });
 
 // Client-side code
-const fs = require('fs');
 const clientCode = `
 <!DOCTYPE html>
 <html lang="en">
