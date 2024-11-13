@@ -1,10 +1,12 @@
-// Import necessary modules
 const express = require('express');
-const bodyParser = require('body-parser');
+const http = require('http');
+const { Server } = require('socket.io');
 const path = require('path');
 
 // Initialize the Express app
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 const PORT = 3000;
 
 // Middleware to parse JSON requests
@@ -14,7 +16,6 @@ let latestData = { peopleCount: 0, temperature: 0 };
 
 // Route to handle receiving data from ESP8266
 app.post('/update', (req, res) => {
-  // Extract data from the request body
   const { peopleCount, temperature } = req.body;
 
   if (peopleCount === undefined || temperature === undefined) {
@@ -26,81 +27,151 @@ app.post('/update', (req, res) => {
   // Update the latest data
   latestData = { peopleCount, temperature };
 
+  // Emit the data to connected clients
+  io.emit('update', latestData);
+
   // Respond with the current status
   res.status(200).json({
     message: 'Data received successfully',
     status: {
       peopleInRoom: peopleCount,
-      temperature: temperature
-    }
+      temperature: temperature,
+    },
   });
 });
 
-// Route to render the webpage
+// Serve the static files for the client
 app.get('/', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Room Status</title>
-      <style>
-        body {
-          font-family: Arial, sans-serif;
-          margin: 0;
-          padding: 0;
-          background-color: #f4f4f9;
-          color: #333;
-        }
-
-        .container {
-          max-width: 600px;
-          margin: 50px auto;
-          padding: 20px;
-          background: #fff;
-          border-radius: 8px;
-          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
-
-        h1 {
-          text-align: center;
-          color: #2c3e50;
-        }
-
-        .data {
-          margin-top: 20px;
-          font-size: 18px;
-        }
-
-        .data p {
-          margin: 10px 0;
-          padding: 10px;
-          background: #ecf0f1;
-          border-radius: 5px;
-          text-align: center;
-          font-weight: bold;
-        }
-
-        .data p strong {
-          color: #2980b9;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h1>Room Status</h1>
-        <div class="data">
-          <p><strong>People in Room:</strong> ${latestData.peopleCount}</p>
-          <p><strong>Temperature:</strong> ${latestData.temperature} &#8451;</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `);
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // Start the server
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
+
+// Client-side code
+const fs = require('fs');
+const clientCode = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Room Status</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f9;
+      color: #333;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    h1 {
+      text-align: center;
+      color: #2c3e50;
+    }
+
+    .data {
+      margin-top: 20px;
+      font-size: 18px;
+    }
+
+    .data p {
+      margin: 10px 0;
+      padding: 10px;
+      background: #ecf0f1;
+      border-radius: 5px;
+      text-align: center;
+      font-weight: bold;
+    }
+
+    .data p strong {
+      color: #2980b9;
+    }
+
+    canvas {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Room Status</h1>
+    <div class="data">
+      <p><strong>People in Room:</strong> <span id="peopleCount">0</span></p>
+      <p><strong>Temperature:</strong> <span id="temperature">0</span> &#8451;</p>
+    </div>
+    <canvas id="temperatureChart" width="400" height="200"></canvas>
+  </div>
+
+  <script>
+    const socket = io();
+
+    const peopleCountElem = document.getElementById('peopleCount');
+    const temperatureElem = document.getElementById('temperature');
+
+    const ctx = document.getElementById('temperatureChart').getContext('2d');
+    const temperatureData = {
+      labels: [],
+      datasets: [{
+        label: 'Temperature (°C)',
+        data: [],
+        borderColor: '#2980b9',
+        borderWidth: 2,
+        fill: false,
+      }],
+    };
+
+    const temperatureChart = new Chart(ctx, {
+      type: 'line',
+      data: temperatureData,
+      options: {
+        scales: {
+          x: { title: { display: true, text: 'Time' } },
+          y: { title: { display: true, text: 'Temperature (°C)' } },
+        },
+      },
+    });
+
+    socket.on('update', ({ peopleCount, temperature }) => {
+      // Update the displayed data
+      peopleCountElem.textContent = peopleCount;
+      temperatureElem.textContent = temperature;
+
+      // Add data to the chart
+      const time = new Date().toLocaleTimeString();
+      temperatureData.labels.push(time);
+      temperatureData.datasets[0].data.push(temperature);
+
+      // Limit data points to 10 for clarity
+      if (temperatureData.labels.length > 10) {
+        temperatureData.labels.shift();
+        temperatureData.datasets[0].data.shift();
+      }
+
+      temperatureChart.update();
+
+      // Show alert if people count exceeds capacity
+      if (peopleCount > 10) {
+        alert('Capacity exceeded! Maximum allowed is 10 people.');
+      }
+    });
+  </script>
+</body>
+</html>
+`;
+
+fs.writeFileSync('index.html', clientCode);
