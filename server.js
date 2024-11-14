@@ -172,7 +172,7 @@ const clientCode = `
         temperatureChart.update();
 
         // Show alert if people count exceeds capacity
-        if (peopleCount > 10) {
+        if (peopleCount > 5) {
           alert('Capacity exceeded! Maximum allowed is 10 people.');
         }
       } catch (error) {
