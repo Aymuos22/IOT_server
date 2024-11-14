@@ -173,7 +173,7 @@ const clientCode = `
 
         // Show alert if people count exceeds capacity
         if (peopleCount > 5) {
-          alert('Capacity exceeded! Maximum allowed is 10 people.');
+          alert('Capacity exceeded!');
         }
       } catch (error) {
         console.error('Error fetching data:', error);
